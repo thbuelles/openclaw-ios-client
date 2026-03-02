@@ -10,7 +10,7 @@ struct ContentView: View {
     @State private var pendingImage: UIImage?
     @State private var composerHeight: CGFloat = 56
     @State private var sessionKey: String = Self.makeSessionKey()
-    @State private var chatMode: ChatMode = .newChat
+    @State private var showNewChatConfirm = false
     @State private var recoverableSnapshot: SavedChatSnapshot?
     @State private var didBootstrap = false
     @FocusState private var inputFocused: Bool
@@ -117,9 +117,7 @@ struct ContentView: View {
             didBootstrap = true
             recoverableSnapshot = Self.loadSnapshot()
             // Cold launch default: new chat with empty history.
-            chatMode = .newChat
-            sessionKey = Self.makeSessionKey()
-            messages = []
+            startNewChat()
             inputFocused = true
         }
         .onChange(of: messages.count) { _ in
@@ -137,38 +135,54 @@ struct ContentView: View {
     }
 
     private var settingsBar: some View {
-        VStack(spacing: 6) {
+        HStack(spacing: 8) {
             TextField("Backend URL", text: $api.backendURL)
                 .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 280)
 
-            Picker("Chat", selection: $chatMode) {
-                Text("New Chat").tag(ChatMode.newChat)
-                Text("Continue Previous Chat").tag(ChatMode.continuePrevious)
-            }
-            .pickerStyle(.menu)
-            .onChange(of: chatMode) { mode in
-                switch mode {
-                case .newChat:
-                    sessionKey = Self.makeSessionKey()
-                    messages = []
-                case .continuePrevious:
-                    guard let snapshot = recoverableSnapshot else {
-                        chatMode = .newChat
-                        return
-                    }
-                    sessionKey = snapshot.sessionKey
-                    messages = snapshot.messages
+            Spacer()
+
+            if recoverableSnapshot != nil {
+                Button {
+                    restorePreviousChat()
+                } label: {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 18, weight: .medium))
+                        .frame(width: 34, height: 34)
                 }
+                .accessibilityLabel("Continue previous chat")
             }
 
-            if chatMode == .continuePrevious, recoverableSnapshot == nil {
-                Text("No previous chat to recover yet.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+            Button {
+                showNewChatConfirm = true
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 18, weight: .medium))
+                    .frame(width: 34, height: 34)
+            }
+            .accessibilityLabel("Start fresh chat")
+            .confirmationDialog("Start new chat?", isPresented: $showNewChatConfirm, titleVisibility: .visible) {
+                Button("Start New Chat", role: .destructive) {
+                    startNewChat()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This clears current on-screen messages. You can still recover your previous chat.")
             }
         }
         .padding(.horizontal)
         .padding(.top, 8)
+    }
+
+    private func startNewChat() {
+        sessionKey = Self.makeSessionKey()
+        messages = []
+    }
+
+    private func restorePreviousChat() {
+        guard let snapshot = recoverableSnapshot else { return }
+        sessionKey = snapshot.sessionKey
+        messages = snapshot.messages
     }
 
     private func bubble(_ m: ChatMessage) -> some View {
@@ -274,10 +288,6 @@ struct ContentView: View {
     }
 }
 
-private enum ChatMode: String {
-    case newChat
-    case continuePrevious
-}
 
 private struct SavedChatSnapshot: Codable {
     let sessionKey: String
