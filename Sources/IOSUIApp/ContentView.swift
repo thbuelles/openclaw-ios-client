@@ -12,7 +12,9 @@ struct ContentView: View {
 
     @State private var threads: [SavedChatThread] = []
     @State private var currentThreadID: UUID?
+    @State private var currentSessionKey: String = ""
     @State private var showThreadPicker = false
+    @State private var threadPendingDelete: SavedChatThread?
 
     @FocusState private var inputFocused: Bool
 
@@ -190,33 +192,54 @@ struct ContentView: View {
     }
 
     private var threadPickerDrawer: some View {
-        NavigationView {
-            List {
-                ForEach(threadsSortedByRecency) { thread in
-                    Button {
-                        selectThread(thread)
-                        withAnimation(.easeInOut(duration: 0.2)) { showThreadPicker = false }
-                    } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(thread.previewTitle)
-                                .font(.body)
-                                .foregroundColor(.white)
-                                .lineLimit(1)
+        List {
+            ForEach(threadsSortedByRecency) { thread in
+                Button {
+                    selectThread(thread)
+                    withAnimation(.easeInOut(duration: 0.2)) { showThreadPicker = false }
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(thread.previewTitle)
+                            .font(.body)
+                            .foregroundColor(.white)
+                            .lineLimit(1)
 
-                            Text(thread.updatedAt.formatted(date: .abbreviated, time: .shortened))
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                        }
-                        .padding(.vertical, 4)
+                        Text(thread.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                            .font(.caption)
+                            .foregroundColor(.gray)
                     }
-                    .listRowBackground(Color(red: 0.18, green: 0.18, blue: 0.18))
+                    .padding(.vertical, 4)
                 }
+                .contextMenu {
+                    Button(role: .destructive) {
+                        threadPendingDelete = thread
+                    } label: {
+                        Label("Delete Chat", systemImage: "trash")
+                    }
+                }
+                .listRowBackground(Color(red: 0.18, green: 0.18, blue: 0.18))
             }
-            .scrollContentBackground(.hidden)
-            .background(Color(red: 0.18, green: 0.18, blue: 0.18))
-            .navigationTitle("All Chats")
         }
+        .scrollContentBackground(.hidden)
         .background(Color(red: 0.18, green: 0.18, blue: 0.18))
+        .confirmationDialog(
+            "Delete this chat?",
+            isPresented: Binding(
+                get: { threadPendingDelete != nil },
+                set: { if !$0 { threadPendingDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let thread = threadPendingDelete {
+                    deleteThread(thread)
+                }
+                threadPendingDelete = nil
+            }
+            Button("Cancel", role: .cancel) {
+                threadPendingDelete = nil
+            }
+        }
     }
 
     private var threadsSortedByRecency: [SavedChatThread] {
@@ -225,30 +248,44 @@ struct ContentView: View {
 
     private func createNewThreadAndSelect() {
         let id = UUID()
-        let thread = SavedChatThread(
-            id: id,
-            sessionKey: "ios-ui-\(id.uuidString.lowercased())",
-            messages: [],
-            createdAt: Date(),
-            updatedAt: Date()
-        )
-        threads.append(thread)
-        saveThreads()
         currentThreadID = id
+        currentSessionKey = "ios-ui-\(id.uuidString.lowercased())"
         messages = []
     }
 
     private func selectThread(_ thread: SavedChatThread) {
         currentThreadID = thread.id
+        currentSessionKey = thread.sessionKey
         messages = thread.messages
     }
 
     private func persistCurrentThread(messages: [ChatMessage]) {
         guard let currentThreadID else { return }
-        guard let idx = threads.firstIndex(where: { $0.id == currentThreadID }) else { return }
-        threads[idx].messages = messages
-        threads[idx].updatedAt = Date()
+        guard !messages.isEmpty else { return }
+
+        if let idx = threads.firstIndex(where: { $0.id == currentThreadID }) {
+            threads[idx].messages = messages
+            threads[idx].updatedAt = Date()
+        } else {
+            let thread = SavedChatThread(
+                id: currentThreadID,
+                sessionKey: currentSessionKey.isEmpty ? "ios-ui-\(currentThreadID.uuidString.lowercased())" : currentSessionKey,
+                messages: messages,
+                createdAt: Date(),
+                updatedAt: Date()
+            )
+            threads.append(thread)
+        }
         saveThreads()
+    }
+
+    private func deleteThread(_ thread: SavedChatThread) {
+        threads.removeAll { $0.id == thread.id }
+        saveThreads()
+
+        if currentThreadID == thread.id {
+            createNewThreadAndSelect()
+        }
     }
 
     private func loadThreads() {
@@ -256,6 +293,7 @@ struct ContentView: View {
               let parsed = try? JSONDecoder().decode([SavedChatThread].self, from: data) else {
             threads = []
             currentThreadID = nil
+            currentSessionKey = ""
             return
         }
 
@@ -263,6 +301,7 @@ struct ContentView: View {
 
         // Cold launch default: start fresh; older chats remain recoverable in picker.
         currentThreadID = nil
+        currentSessionKey = ""
         messages = []
     }
 
@@ -340,7 +379,7 @@ struct ContentView: View {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         let imageToSend = pendingImage
         guard !text.isEmpty || imageToSend != nil else { return }
-        guard let currentThread = threads.first(where: { $0.id == currentThreadID }) else { return }
+        guard !currentSessionKey.isEmpty else { return }
 
         input = ""
         pendingImage = nil
@@ -351,7 +390,7 @@ struct ContentView: View {
         defer { isSending = false }
 
         do {
-            let reply = try await api.send(text, image: imageToSend, sessionKey: currentThread.sessionKey)
+            let reply = try await api.send(text, image: imageToSend, sessionKey: currentSessionKey)
             let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             messages.append(.init(role: "assistant", text: reply, responseTimeMs: elapsedMs))
         } catch {
