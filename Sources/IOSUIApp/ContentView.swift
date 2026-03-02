@@ -9,13 +9,14 @@ struct ContentView: View {
     @State private var showCamera = false
     @State private var pendingImage: UIImage?
     @State private var composerHeight: CGFloat = 56
-    @State private var sessionKey: String = Self.makeSessionKey()
-    @State private var showNewChatConfirm = false
-    @State private var recoverableSnapshot: SavedChatSnapshot?
-    @State private var didBootstrap = false
+
+    @State private var threads: [SavedChatThread] = []
+    @State private var currentThreadID: UUID?
+    @State private var showThreadPicker = false
+
     @FocusState private var inputFocused: Bool
 
-    private static let snapshotKey = "lastChatSnapshot"
+    private static let threadsKey = "chatThreadsV1"
 
     var body: some View {
         VStack(spacing: 10) {
@@ -113,24 +114,23 @@ struct ContentView: View {
             .padding()
         }
         .onAppear {
-            guard !didBootstrap else { return }
-            didBootstrap = true
-            recoverableSnapshot = Self.loadSnapshot()
-            // Cold launch default: new chat with empty history.
-            startNewChat()
+            loadThreads()
+            if currentThreadID == nil {
+                createNewThreadAndSelect()
+            }
             inputFocused = true
         }
         .onChange(of: messages.count) { _ in
-            guard !messages.isEmpty else { return }
-            let snapshot = SavedChatSnapshot(sessionKey: sessionKey, messages: messages, savedAt: Date())
-            Self.saveSnapshot(snapshot)
-            recoverableSnapshot = snapshot
+            persistCurrentThread(messages: messages)
         }
         .sheet(isPresented: $showCamera) {
             CameraPicker { image in
                 pendingImage = image
             }
             .ignoresSafeArea()
+        }
+        .fullScreenCover(isPresented: $showThreadPicker) {
+            threadPickerView
         }
     }
 
@@ -142,47 +142,110 @@ struct ContentView: View {
 
             Spacer()
 
-            if recoverableSnapshot != nil {
-                Button {
-                    restorePreviousChat()
-                } label: {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 18, weight: .medium))
-                        .frame(width: 34, height: 34)
-                }
-                .accessibilityLabel("Continue previous chat")
-            }
-
             Button {
-                showNewChatConfirm = true
+                showThreadPicker = true
             } label: {
-                Image(systemName: "arrow.clockwise")
+                Image(systemName: "line.3.vertical")
                     .font(.system(size: 18, weight: .medium))
                     .frame(width: 34, height: 34)
             }
-            .accessibilityLabel("Start fresh chat")
-            .confirmationDialog("Start new chat?", isPresented: $showNewChatConfirm, titleVisibility: .visible) {
-                Button("Start New Chat", role: .destructive) {
-                    startNewChat()
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This clears current on-screen messages. You can still recover your previous chat.")
+            .accessibilityLabel("Show all chats")
+
+            Button {
+                createNewThreadAndSelect()
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 18, weight: .medium))
+                    .frame(width: 34, height: 34)
             }
+            .accessibilityLabel("New chat")
         }
         .padding(.horizontal)
         .padding(.top, 8)
     }
 
-    private func startNewChat() {
-        sessionKey = Self.makeSessionKey()
+    private var threadPickerView: some View {
+        NavigationView {
+            List {
+                ForEach(threadsSortedByRecency) { thread in
+                    Button {
+                        selectThread(thread)
+                        showThreadPicker = false
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(thread.previewTitle)
+                                .font(.body)
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+
+                            Text(thread.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+            .navigationTitle("All Chats")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close") { showThreadPicker = false }
+                }
+            }
+        }
+    }
+
+    private var threadsSortedByRecency: [SavedChatThread] {
+        threads.sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    private func createNewThreadAndSelect() {
+        let id = UUID()
+        let thread = SavedChatThread(
+            id: id,
+            sessionKey: "ios-ui-\(id.uuidString.lowercased())",
+            messages: [],
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+        threads.append(thread)
+        saveThreads()
+        currentThreadID = id
         messages = []
     }
 
-    private func restorePreviousChat() {
-        guard let snapshot = recoverableSnapshot else { return }
-        sessionKey = snapshot.sessionKey
-        messages = snapshot.messages
+    private func selectThread(_ thread: SavedChatThread) {
+        currentThreadID = thread.id
+        messages = thread.messages
+    }
+
+    private func persistCurrentThread(messages: [ChatMessage]) {
+        guard let currentThreadID else { return }
+        guard let idx = threads.firstIndex(where: { $0.id == currentThreadID }) else { return }
+        threads[idx].messages = messages
+        threads[idx].updatedAt = Date()
+        saveThreads()
+    }
+
+    private func loadThreads() {
+        guard let data = UserDefaults.standard.data(forKey: Self.threadsKey),
+              let parsed = try? JSONDecoder().decode([SavedChatThread].self, from: data) else {
+            threads = []
+            currentThreadID = nil
+            return
+        }
+
+        threads = parsed
+
+        // Cold launch default: start fresh; older chats remain recoverable in picker.
+        currentThreadID = nil
+        messages = []
+    }
+
+    private func saveThreads() {
+        if let data = try? JSONEncoder().encode(threads) {
+            UserDefaults.standard.set(data, forKey: Self.threadsKey)
+        }
     }
 
     private func bubble(_ m: ChatMessage) -> some View {
@@ -253,6 +316,7 @@ struct ContentView: View {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         let imageToSend = pendingImage
         guard !text.isEmpty || imageToSend != nil else { return }
+        guard let currentThread = threads.first(where: { $0.id == currentThreadID }) else { return }
 
         input = ""
         pendingImage = nil
@@ -263,7 +327,7 @@ struct ContentView: View {
         defer { isSending = false }
 
         do {
-            let reply = try await api.send(text, image: imageToSend, sessionKey: sessionKey)
+            let reply = try await api.send(text, image: imageToSend, sessionKey: currentThread.sessionKey)
             let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             messages.append(.init(role: "assistant", text: reply, responseTimeMs: elapsedMs))
         } catch {
@@ -271,28 +335,23 @@ struct ContentView: View {
             messages.append(.init(role: "assistant", text: "Error: \(error.localizedDescription)", responseTimeMs: elapsedMs))
         }
     }
-
-    private static func makeSessionKey() -> String {
-        "ios-ui-\(UUID().uuidString.lowercased())"
-    }
-
-    private static func saveSnapshot(_ snapshot: SavedChatSnapshot) {
-        if let data = try? JSONEncoder().encode(snapshot) {
-            UserDefaults.standard.set(data, forKey: snapshotKey)
-        }
-    }
-
-    private static func loadSnapshot() -> SavedChatSnapshot? {
-        guard let data = UserDefaults.standard.data(forKey: snapshotKey) else { return nil }
-        return try? JSONDecoder().decode(SavedChatSnapshot.self, from: data)
-    }
 }
 
-
-private struct SavedChatSnapshot: Codable {
+private struct SavedChatThread: Identifiable, Codable {
+    let id: UUID
     let sessionKey: String
-    let messages: [ChatMessage]
-    let savedAt: Date
+    var messages: [ChatMessage]
+    let createdAt: Date
+    var updatedAt: Date
+
+    var previewTitle: String {
+        let firstPrompt = messages.first(where: { $0.role == "user" })?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? "new chat"
+        if firstPrompt.isEmpty { return "new chat" }
+
+        let words = firstPrompt.split(whereSeparator: { $0.isWhitespace })
+        if words.count <= 8 { return firstPrompt }
+        return words.prefix(8).joined(separator: " ") + "..."
+    }
 }
 
 private struct TypingIndicatorView: View {
