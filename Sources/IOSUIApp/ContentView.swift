@@ -150,33 +150,24 @@ struct ContentView: View {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) { showThreadPicker = true }
             } label: {
-                Image(systemName: "line.3.vertical")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(Color.blue)
-                    .frame(width: 38, height: 38)
-                    .background(Color.black)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                VStack(spacing: 4) {
+                    RoundedRectangle(cornerRadius: 1.5).frame(width: 16, height: 2.5)
+                    RoundedRectangle(cornerRadius: 1.5).frame(width: 16, height: 2.5)
+                    RoundedRectangle(cornerRadius: 1.5).frame(width: 16, height: 2.5)
+                }
+                .foregroundStyle(Color.blue)
+                .frame(width: 38, height: 38)
+                .background(Color.black)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             .accessibilityLabel("Show all chats")
 
             Spacer()
 
-            Image("ChatLogo")
+            Image("ChatLogoFaded")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 42, height: 42)
-                .clipShape(RoundedRectangle(cornerRadius: 9))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 9)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                )
-                .mask(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.75), Color.white, Color.white.opacity(0.75)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
+                .frame(width: 58, height: 58)
 
             Spacer()
 
