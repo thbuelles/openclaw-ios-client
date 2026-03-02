@@ -19,10 +19,11 @@ struct ContentView: View {
     private static let threadsKey = "chatThreadsV1"
 
     var body: some View {
-        VStack(spacing: 10) {
-            settingsBar
+        ZStack(alignment: .leading) {
+            VStack(spacing: 10) {
+                settingsBar
 
-            ScrollViewReader { proxy in
+                ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
                         ForEach(messages) { msg in
@@ -123,40 +124,60 @@ struct ContentView: View {
         .onChange(of: messages.count) { _ in
             persistCurrentThread(messages: messages)
         }
-        .sheet(isPresented: $showCamera) {
-            CameraPicker { image in
-                pendingImage = image
+            .sheet(isPresented: $showCamera) {
+                CameraPicker { image in
+                    pendingImage = image
+                }
+                .ignoresSafeArea()
             }
-            .ignoresSafeArea()
+
+            if showThreadPicker {
+                Color.black.opacity(0.25)
+                    .ignoresSafeArea()
+                    .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { showThreadPicker = false } }
+
+                threadPickerDrawer
+                    .frame(width: UIScreen.main.bounds.width * 0.8)
+                    .transition(.move(edge: .leading))
+                    .zIndex(1)
+            }
         }
-        .fullScreenCover(isPresented: $showThreadPicker) {
-            threadPickerView
-        }
+        .animation(.easeInOut(duration: 0.2), value: showThreadPicker)
     }
 
     private var settingsBar: some View {
         HStack(spacing: 8) {
-            TextField("Backend URL", text: $api.backendURL)
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 280)
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { showThreadPicker = true }
+            } label: {
+                Image(systemName: "line.3.vertical")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 36, height: 36)
+                    .background(Color(.secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .accessibilityLabel("Show all chats")
 
             Spacer()
 
-            Button {
-                showThreadPicker = true
-            } label: {
-                Image(systemName: "line.3.vertical")
-                    .font(.system(size: 18, weight: .medium))
-                    .frame(width: 34, height: 34)
-            }
-            .accessibilityLabel("Show all chats")
+            Image("ChatLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 28, height: 28)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            Spacer()
 
             Button {
                 createNewThreadAndSelect()
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 18, weight: .medium))
-                    .frame(width: 34, height: 34)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 36, height: 36)
+                    .background(Color(.secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             .accessibilityLabel("New chat")
         }
@@ -164,13 +185,13 @@ struct ContentView: View {
         .padding(.top, 8)
     }
 
-    private var threadPickerView: some View {
+    private var threadPickerDrawer: some View {
         NavigationView {
             List {
                 ForEach(threadsSortedByRecency) { thread in
                     Button {
                         selectThread(thread)
-                        showThreadPicker = false
+                        withAnimation(.easeInOut(duration: 0.2)) { showThreadPicker = false }
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(thread.previewTitle)
@@ -189,10 +210,11 @@ struct ContentView: View {
             .navigationTitle("All Chats")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Close") { showThreadPicker = false }
+                    Button("Close") { withAnimation(.easeInOut(duration: 0.2)) { showThreadPicker = false } }
                 }
             }
         }
+        .background(Color(.systemBackground))
     }
 
     private var threadsSortedByRecency: [SavedChatThread] {
