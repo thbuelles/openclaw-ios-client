@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var currentSessionKey: String = ""
     @State private var showThreadPicker = false
     @State private var threadPendingDelete: SavedChatThread?
+    @State private var showBackendInfo = false
 
     @FocusState private var inputFocused: Bool
 
@@ -126,6 +127,14 @@ struct ContentView: View {
         .onChange(of: messages.count) { _ in
             persistCurrentThread(messages: messages)
         }
+        .onChange(of: showThreadPicker) { showing in
+            if showing { inputFocused = false }
+        }
+        .alert("Backend IP", isPresented: $showBackendInfo) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(displayHost)
+        }
             .sheet(isPresented: $showCamera) {
                 CameraPicker { image in
                     pendingImage = image
@@ -147,9 +156,19 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.2), value: showThreadPicker)
     }
 
+    private var displayHost: String {
+        let raw = api.backendURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: raw), let host = url.host else { return raw }
+        if let port = url.port {
+            return "\(host):\(port)"
+        }
+        return host
+    }
+
     private var settingsBar: some View {
         HStack(spacing: 8) {
             Button {
+                inputFocused = false
                 withAnimation(.easeInOut(duration: 0.2)) { showThreadPicker = true }
             } label: {
                 VStack(spacing: 4) {
@@ -166,10 +185,16 @@ struct ContentView: View {
 
             Spacer()
 
-            Image("ChatLogoFaded")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 58, height: 58)
+            Button {
+                inputFocused = false
+                showBackendInfo = true
+            } label: {
+                Image("ChatLogoFaded")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 58, height: 58)
+            }
+            .buttonStyle(.plain)
 
             Spacer()
 
