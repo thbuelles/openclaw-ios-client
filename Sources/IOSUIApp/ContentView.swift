@@ -4,14 +4,18 @@ import UIKit
 struct ContentView: View {
     @StateObject private var api = ChatAPI()
     @State private var input: String = ""
-    @State private var messages: [ChatMessage] = [
-        .init(role: "assistant", text: "Connected. Send a message.")
-    ]
+    @State private var messages: [ChatMessage] = []
     @State private var isSending = false
     @State private var showCamera = false
     @State private var pendingImage: UIImage?
     @State private var composerHeight: CGFloat = 56
+    @State private var sessionKey: String = Self.makeSessionKey()
+    @State private var chatMode: ChatMode = .newChat
+    @State private var recoverableSnapshot: SavedChatSnapshot?
+    @State private var didBootstrap = false
     @FocusState private var inputFocused: Bool
+
+    private static let snapshotKey = "lastChatSnapshot"
 
     var body: some View {
         VStack(spacing: 10) {
@@ -108,7 +112,22 @@ struct ContentView: View {
             )
             .padding()
         }
-        .onAppear { inputFocused = true }
+        .onAppear {
+            guard !didBootstrap else { return }
+            didBootstrap = true
+            recoverableSnapshot = Self.loadSnapshot()
+            // Cold launch default: new chat with empty history.
+            chatMode = .newChat
+            sessionKey = Self.makeSessionKey()
+            messages = []
+            inputFocused = true
+        }
+        .onChange(of: messages.count) { _ in
+            guard !messages.isEmpty else { return }
+            let snapshot = SavedChatSnapshot(sessionKey: sessionKey, messages: messages, savedAt: Date())
+            Self.saveSnapshot(snapshot)
+            recoverableSnapshot = snapshot
+        }
         .sheet(isPresented: $showCamera) {
             CameraPicker { image in
                 pendingImage = image
@@ -121,8 +140,32 @@ struct ContentView: View {
         VStack(spacing: 6) {
             TextField("Backend URL", text: $api.backendURL)
                 .textFieldStyle(.roundedBorder)
-            TextField("Session Key", text: $api.sessionKey)
-                .textFieldStyle(.roundedBorder)
+
+            Picker("Chat", selection: $chatMode) {
+                Text("New Chat").tag(ChatMode.newChat)
+                Text("Continue Previous Chat").tag(ChatMode.continuePrevious)
+            }
+            .pickerStyle(.menu)
+            .onChange(of: chatMode) { mode in
+                switch mode {
+                case .newChat:
+                    sessionKey = Self.makeSessionKey()
+                    messages = []
+                case .continuePrevious:
+                    guard let snapshot = recoverableSnapshot else {
+                        chatMode = .newChat
+                        return
+                    }
+                    sessionKey = snapshot.sessionKey
+                    messages = snapshot.messages
+                }
+            }
+
+            if chatMode == .continuePrevious, recoverableSnapshot == nil {
+                Text("No previous chat to recover yet.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
         .padding(.horizontal)
         .padding(.top, 8)
@@ -206,7 +249,7 @@ struct ContentView: View {
         defer { isSending = false }
 
         do {
-            let reply = try await api.send(text, image: imageToSend)
+            let reply = try await api.send(text, image: imageToSend, sessionKey: sessionKey)
             let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             messages.append(.init(role: "assistant", text: reply, responseTimeMs: elapsedMs))
         } catch {
@@ -214,6 +257,32 @@ struct ContentView: View {
             messages.append(.init(role: "assistant", text: "Error: \(error.localizedDescription)", responseTimeMs: elapsedMs))
         }
     }
+
+    private static func makeSessionKey() -> String {
+        "ios-ui-\(UUID().uuidString.lowercased())"
+    }
+
+    private static func saveSnapshot(_ snapshot: SavedChatSnapshot) {
+        if let data = try? JSONEncoder().encode(snapshot) {
+            UserDefaults.standard.set(data, forKey: snapshotKey)
+        }
+    }
+
+    private static func loadSnapshot() -> SavedChatSnapshot? {
+        guard let data = UserDefaults.standard.data(forKey: snapshotKey) else { return nil }
+        return try? JSONDecoder().decode(SavedChatSnapshot.self, from: data)
+    }
+}
+
+private enum ChatMode: String {
+    case newChat
+    case continuePrevious
+}
+
+private struct SavedChatSnapshot: Codable {
+    let sessionKey: String
+    let messages: [ChatMessage]
+    let savedAt: Date
 }
 
 private struct TypingIndicatorView: View {

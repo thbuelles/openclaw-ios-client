@@ -9,10 +9,6 @@ final class ChatAPI: ObservableObject {
         didSet { UserDefaults.standard.set(backendURL.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "backendURL") }
     }
 
-    @Published var sessionKey: String {
-        didSet { UserDefaults.standard.set(sessionKey.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "sessionKey") }
-    }
-
     init() {
         let saved = UserDefaults.standard.string(forKey: "backendURL")?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let saved, saved.contains("127.0.0.1") || saved.contains("localhost") {
@@ -20,12 +16,9 @@ final class ChatAPI: ObservableObject {
         } else {
             backendURL = saved?.isEmpty == false ? saved! : Self.defaultBackend
         }
-
-        let savedSession = UserDefaults.standard.string(forKey: "sessionKey")?.trimmingCharacters(in: .whitespacesAndNewlines)
-        sessionKey = savedSession?.isEmpty == false ? savedSession! : "ios-ui"
     }
 
-    func send(_ text: String, image: UIImage?) async throws -> String {
+    func send(_ text: String, image: UIImage?, sessionKey: String) async throws -> String {
         let base = backendURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: base + "/chat") else {
             throw URLError(.badURL)
