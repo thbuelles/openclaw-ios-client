@@ -17,10 +17,13 @@ struct ContentView: View {
     @State private var threadPendingDelete: SavedChatThread?
     @State private var showDeleteAllConfirm = false
     @State private var showBackendInfo = false
+    @State private var pingMs: Int?
+    @State private var pingInFlight = false
 
     @FocusState private var inputFocused: Bool
 
     private static let threadsKey = "chatThreadsV1"
+    private let pingTicker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -134,6 +137,15 @@ struct ContentView: View {
         .onChange(of: showThreadPicker) { showing in
             if showing { inputFocused = false }
         }
+        .onChange(of: showBackendInfo) { showing in
+            if showing {
+                Task { await refreshPing() }
+            }
+        }
+        .onReceive(pingTicker) { _ in
+            guard showBackendInfo else { return }
+            Task { await refreshPing() }
+        }
             .sheet(isPresented: $showCamera) {
                 CameraPicker { image in
                     pendingImage = image
@@ -162,6 +174,47 @@ struct ContentView: View {
             return "\(host):\(port)"
         }
         return host
+    }
+
+    private var pingDisplay: String {
+        if let pingMs { return "\(pingMs) ms" }
+        if pingInFlight { return "measuring..." }
+        return "--"
+    }
+
+    private func refreshPing() async {
+        guard !pingInFlight else { return }
+        pingInFlight = true
+        defer { pingInFlight = false }
+
+        let base = api.backendURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard var comps = URLComponents(string: base) else {
+            pingMs = nil
+            return
+        }
+        comps.path = "/health"
+        comps.query = nil
+        comps.fragment = nil
+
+        guard let url = comps.url else {
+            pingMs = nil
+            return
+        }
+
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 2.0
+
+        let started = Date()
+        do {
+            let (_, resp) = try await URLSession.shared.data(for: req)
+            guard let http = resp as? HTTPURLResponse, (200..<500).contains(http.statusCode) else {
+                pingMs = nil
+                return
+            }
+            pingMs = max(1, Int(Date().timeIntervalSince(started) * 1000))
+        } catch {
+            pingMs = nil
+        }
     }
 
     private var settingsBar: some View {
@@ -214,10 +267,16 @@ struct ContentView: View {
             }
 
             if showBackendInfo {
-                Text(displayHost)
-                    .font(.caption)
-                    .foregroundColor(.blue)
-                    .lineLimit(1)
+                VStack(spacing: 2) {
+                    Text(displayHost)
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                        .lineLimit(1)
+                    Text("Ping: \(pingDisplay)")
+                        .font(.caption2)
+                        .foregroundColor(.blue)
+                        .lineLimit(1)
+                }
             }
         }
         .padding(.horizontal)
