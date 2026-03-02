@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var currentSessionKey: String = ""
     @State private var showThreadPicker = false
     @State private var threadPendingDelete: SavedChatThread?
+    @State private var showDeleteAllConfirm = false
     @State private var showBackendInfo = false
 
     @FocusState private var inputFocused: Bool
@@ -228,29 +229,53 @@ struct ContentView: View {
     private var threadPickerDrawer: some View {
         List {
             ForEach(threadsSortedByRecency) { thread in
-                Button {
-                    selectThread(thread)
-                    withAnimation(.easeInOut(duration: 0.2)) { showThreadPicker = false }
-                } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(thread.previewTitle)
-                            .font(.body)
-                            .foregroundColor(.white)
-                            .lineLimit(1)
+                HStack(spacing: 10) {
+                    Button {
+                        selectThread(thread)
+                        withAnimation(.easeInOut(duration: 0.2)) { showThreadPicker = false }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(thread.previewTitle)
+                                .font(.body)
+                                .foregroundColor(.white)
+                                .lineLimit(1)
 
-                        Text(thread.updatedAt.formatted(date: .abbreviated, time: .shortened))
-                            .font(.caption)
-                            .foregroundColor(.gray)
+                            Text(thread.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
+                        .padding(.vertical, 4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(.vertical, 4)
-                }
-                .contextMenu {
-                    Button(role: .destructive) {
+                    .buttonStyle(.plain)
+
+                    Button {
                         threadPendingDelete = thread
                     } label: {
-                        Label("Delete Chat", systemImage: "trash")
+                        Image(systemName: "trash")
+                            .foregroundColor(.red)
+                            .frame(width: 28, height: 28)
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Delete chat")
                 }
+                .listRowBackground(Color(red: 0.18, green: 0.18, blue: 0.18))
+            }
+
+            if !threads.isEmpty {
+                Button {
+                    showDeleteAllConfirm = true
+                } label: {
+                    HStack {
+                        Spacer()
+                        Text("Delete All")
+                            .foregroundColor(.red)
+                            .fontWeight(.semibold)
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.plain)
                 .listRowBackground(Color(red: 0.18, green: 0.18, blue: 0.18))
             }
         }
@@ -273,6 +298,12 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) {
                 threadPendingDelete = nil
             }
+        }
+        .confirmationDialog("Delete all chats?", isPresented: $showDeleteAllConfirm, titleVisibility: .visible) {
+            Button("Delete All", role: .destructive) {
+                deleteAllThreads()
+            }
+            Button("Cancel", role: .cancel) {}
         }
     }
 
@@ -320,6 +351,12 @@ struct ContentView: View {
         if currentThreadID == thread.id {
             createNewThreadAndSelect()
         }
+    }
+
+    private func deleteAllThreads() {
+        threads = []
+        saveThreads()
+        createNewThreadAndSelect()
     }
 
     private func loadThreads() {
