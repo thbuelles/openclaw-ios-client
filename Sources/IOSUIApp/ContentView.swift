@@ -46,7 +46,10 @@ struct ContentView: View {
                     .padding(.horizontal)
                 }
                 .contentShape(Rectangle())
-                .onTapGesture { inputFocused = false }
+                .onTapGesture {
+                    inputFocused = false
+                    showBackendInfo = false
+                }
                 .scrollDismissesKeyboard(.immediately)
                 .onChange(of: messages.count) { _ in
                     withAnimation {
@@ -130,11 +133,6 @@ struct ContentView: View {
         .onChange(of: showThreadPicker) { showing in
             if showing { inputFocused = false }
         }
-        .alert("Backend IP", isPresented: $showBackendInfo) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(displayHost)
-        }
             .sheet(isPresented: $showCamera) {
                 CameraPicker { image in
                     pendingImage = image
@@ -166,53 +164,64 @@ struct ContentView: View {
     }
 
     private var settingsBar: some View {
-        HStack(spacing: 8) {
-            Button {
-                inputFocused = false
-                withAnimation(.easeInOut(duration: 0.2)) { showThreadPicker = true }
-            } label: {
-                VStack(spacing: 4) {
-                    RoundedRectangle(cornerRadius: 1.5).frame(width: 16, height: 2.5)
-                    RoundedRectangle(cornerRadius: 1.5).frame(width: 16, height: 2.5)
-                    RoundedRectangle(cornerRadius: 1.5).frame(width: 16, height: 2.5)
-                }
-                .foregroundStyle(Color.blue)
-                .frame(width: 38, height: 38)
-                .background(Color.black)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
-            .accessibilityLabel("Show all chats")
-
-            Spacer()
-
-            Button {
-                inputFocused = false
-                showBackendInfo = true
-            } label: {
-                Image("ChatLogoFaded")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 58, height: 58)
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
-
-            Button {
-                createNewThreadAndSelect()
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 20, weight: .bold))
+        VStack(spacing: 4) {
+            HStack(spacing: 8) {
+                Button {
+                    inputFocused = false
+                    showBackendInfo = false
+                    withAnimation(.easeInOut(duration: 0.2)) { showThreadPicker = true }
+                } label: {
+                    VStack(spacing: 4) {
+                        RoundedRectangle(cornerRadius: 1.5).frame(width: 16, height: 2.5)
+                        RoundedRectangle(cornerRadius: 1.5).frame(width: 16, height: 2.5)
+                        RoundedRectangle(cornerRadius: 1.5).frame(width: 16, height: 2.5)
+                    }
                     .foregroundStyle(Color.blue)
                     .frame(width: 38, height: 38)
                     .background(Color.black)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .accessibilityLabel("Show all chats")
+
+                Spacer()
+
+                Button {
+                    inputFocused = false
+                    showBackendInfo.toggle()
+                } label: {
+                    Image("ChatLogoFaded")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 58, height: 58)
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button {
+                    showBackendInfo = false
+                    createNewThreadAndSelect()
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(Color.blue)
+                        .frame(width: 38, height: 38)
+                        .background(Color.black)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .accessibilityLabel("New chat")
             }
-            .accessibilityLabel("New chat")
+
+            if showBackendInfo {
+                Text(displayHost)
+                    .font(.caption)
+                    .foregroundColor(.blue)
+                    .lineLimit(1)
+            }
         }
         .padding(.horizontal)
         .padding(.top, 8)
-        .padding(.bottom, 2)
+        .padding(.bottom, 8)
         .background(Color.black.opacity(0.96))
     }
 
