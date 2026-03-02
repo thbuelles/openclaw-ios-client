@@ -151,10 +151,10 @@ struct ContentView: View {
                 withAnimation(.easeInOut(duration: 0.2)) { showThreadPicker = true }
             } label: {
                 Image(systemName: "line.3.vertical")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 36, height: 36)
-                    .background(Color(.secondarySystemBackground))
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(Color.blue)
+                    .frame(width: 38, height: 38)
+                    .background(Color.black)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             .accessibilityLabel("Show all chats")
@@ -164,8 +164,19 @@ struct ContentView: View {
             Image("ChatLogo")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 28, height: 28)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .frame(width: 42, height: 42)
+                .clipShape(RoundedRectangle(cornerRadius: 9))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+                .mask(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.75), Color.white, Color.white.opacity(0.75)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
 
             Spacer()
 
@@ -173,16 +184,18 @@ struct ContentView: View {
                 createNewThreadAndSelect()
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 36, height: 36)
-                    .background(Color(.secondarySystemBackground))
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(Color.blue)
+                    .frame(width: 38, height: 38)
+                    .background(Color.black)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             .accessibilityLabel("New chat")
         }
         .padding(.horizontal)
         .padding(.top, 8)
+        .padding(.bottom, 2)
+        .background(Color.black.opacity(0.96))
     }
 
     private var threadPickerDrawer: some View {
@@ -196,25 +209,23 @@ struct ContentView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(thread.previewTitle)
                                 .font(.body)
-                                .foregroundColor(.primary)
+                                .foregroundColor(.white)
                                 .lineLimit(1)
 
                             Text(thread.updatedAt.formatted(date: .abbreviated, time: .shortened))
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(.gray)
                         }
                         .padding(.vertical, 4)
                     }
+                    .listRowBackground(Color(red: 0.18, green: 0.18, blue: 0.18))
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color(red: 0.18, green: 0.18, blue: 0.18))
             .navigationTitle("All Chats")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Close") { withAnimation(.easeInOut(duration: 0.2)) { showThreadPicker = false } }
-                }
-            }
         }
-        .background(Color(.systemBackground))
+        .background(Color(red: 0.18, green: 0.18, blue: 0.18))
     }
 
     private var threadsSortedByRecency: [SavedChatThread] {
