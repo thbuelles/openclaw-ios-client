@@ -279,6 +279,8 @@ struct ContentView: View {
                 .listRowBackground(Color(red: 0.18, green: 0.18, blue: 0.18))
             }
         }
+        .listStyle(.plain)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .scrollContentBackground(.hidden)
         .background(Color(red: 0.18, green: 0.18, blue: 0.18))
         .confirmationDialog(
