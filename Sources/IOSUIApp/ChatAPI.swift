@@ -49,7 +49,7 @@ final class ChatAPI: ObservableObject {
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.timeoutInterval = 35
+        req.timeoutInterval = 90
 
         let imageData = image?.jpegData(compressionQuality: 0.85)
         let payload = ChatRequest(
