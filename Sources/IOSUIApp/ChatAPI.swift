@@ -18,6 +18,28 @@ final class ChatAPI: ObservableObject {
         }
     }
 
+    func fetchEvents(since: String?) async -> [ServerEvent] {
+        let base = backendURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard var comps = URLComponents(string: base + "/events") else { return [] }
+        if let since, !since.isEmpty {
+            comps.queryItems = [URLQueryItem(name: "since", value: since)]
+        }
+        guard let url = comps.url else { return [] }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.timeoutInterval = 8
+
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return [] }
+            let parsed = try JSONDecoder().decode(EventsResponse.self, from: data)
+            return parsed.events
+        } catch {
+            return []
+        }
+    }
+
     func send(_ text: String, image: UIImage?, sessionKey: String) async throws -> String {
         let base = backendURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: base + "/chat") else {

@@ -24,6 +24,9 @@ struct ContentView: View {
 
     private static let threadsKey = "chatThreadsV1"
     private let pingTicker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    private let eventsTicker = Timer.publish(every: 8, on: .main, in: .common).autoconnect()
+    @State private var lastEventID: String = UserDefaults.standard.string(forKey: "lastEventID") ?? ""
+    @State private var seenEventIDs: Set<String> = []
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -130,6 +133,7 @@ struct ContentView: View {
                 createNewThreadAndSelect()
             }
             inputFocused = true
+            Task { await pollEvents() }
         }
         .onChange(of: messages.count) { _ in
             persistCurrentThread(messages: messages)
@@ -145,6 +149,9 @@ struct ContentView: View {
         .onReceive(pingTicker) { _ in
             guard showBackendInfo else { return }
             Task { await refreshPing() }
+        }
+        .onReceive(eventsTicker) { _ in
+            Task { await pollEvents() }
         }
             .sheet(isPresented: $showCamera) {
                 CameraPicker { image in
@@ -505,6 +512,41 @@ struct ContentView: View {
     private func formatResponseTime(_ ms: Int) -> String {
         if ms < 1000 { return "\(ms) ms" }
         return String(format: "%.1f s", Double(ms) / 1000.0)
+    }
+
+    private func pollEvents() async {
+        let events = await api.fetchEvents(since: lastEventID.isEmpty ? nil : lastEventID)
+        guard !events.isEmpty else { return }
+
+        var newestID = lastEventID
+
+        for event in events {
+            newestID = event.id
+
+            if seenEventIDs.contains(event.id) {
+                continue
+            }
+            seenEventIDs.insert(event.id)
+
+            if seenEventIDs.count > 500 {
+                seenEventIDs = Set(seenEventIDs.suffix(250))
+            }
+
+            if let session = event.session, !session.isEmpty, session == currentSessionKey {
+                continue
+            }
+
+            let title = event.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "bici" : event.title
+            let body = event.message.trimmingCharacters(in: .whitespacesAndNewlines)
+            if body.isEmpty { continue }
+
+            LocalNotificationManager.shared.notify(title: title, body: body)
+        }
+
+        if newestID != lastEventID {
+            lastEventID = newestID
+            UserDefaults.standard.set(newestID, forKey: "lastEventID")
+        }
     }
 
     private func send() async {

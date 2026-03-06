@@ -35,3 +35,16 @@ struct ChatRequest: Codable {
 struct ChatResponse: Codable {
     let reply: String
 }
+
+struct ServerEvent: Codable, Identifiable {
+    let id: String
+    let ts: String
+    let type: String
+    let title: String
+    let message: String
+    let session: String?
+}
+
+struct EventsResponse: Codable {
+    let events: [ServerEvent]
+}

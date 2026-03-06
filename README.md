@@ -87,7 +87,35 @@ In app top fields:
 
 Then send messages.
 
+## Push notifications (APNs)
+
+The app now auto-requests notification permission on first launch and registers a device token with the bridge at:
+
+- `POST /register_push`
+
+Bridge stores tokens in:
+
+- `/Users/bici/.openclaw/workspace/.secrets/ios_push_devices.json`
+
+To send pushes from the bridge, configure these env vars for the bridge process:
+
+- `APNS_KEY_ID` (Apple Key ID)
+- `APNS_TEAM_ID` (Apple Team ID)
+- `APNS_PRIVATE_KEY_PATH` (path to your `.p8` APNs auth key)
+- `APNS_TOPIC` (your iOS app bundle id)
+- `PUSH_ADMIN_TOKEN` (optional but recommended, required header `X-Push-Token`)
+
+Then send a push via:
+
+```bash
+curl -sS -X POST "http://127.0.0.1:8787/push" \
+  -H "Content-Type: application/json" \
+  -H "X-Push-Token: <PUSH_ADMIN_TOKEN>" \
+  -d '{"title":"bici","message":"test push from bridge"}'
+```
+
 ## Notes
 
 - Keep bridge private (tailnet only)
 - Do not expose bridge to public internet without auth
+- For APNs to work, the iOS target must have **Push Notifications** capability enabled in Xcode and the app must be signed with a provisioning profile that includes push entitlement.
