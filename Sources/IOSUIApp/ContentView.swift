@@ -24,6 +24,7 @@ struct ContentView: View {
 
     private static let threadsKey = "chatThreadsV1"
     private static let missedInboxThreadIDKey = "missedInboxThreadID"
+    private static let currentThreadIDKey = "currentThreadID"
 
     private let pingTicker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     private let eventsTicker = Timer.publish(every: 8, on: .main, in: .common).autoconnect()
@@ -116,6 +117,11 @@ struct ContentView: View {
                 TextField("Type message", text: $input, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .focused($inputFocused)
+
+                Button("Paste") {
+                    pasteToInput()
+                }
+                .disabled(isSending)
 
                 Button(isSending ? "..." : "Send") {
                     Task { await send() }
@@ -388,6 +394,7 @@ struct ContentView: View {
         currentThreadID = id
         currentSessionKey = "ios-ui-\(id.uuidString.lowercased())"
         messages = []
+        UserDefaults.standard.set(id.uuidString, forKey: Self.currentThreadIDKey)
     }
 
     private func getOrCreateMissedInboxThread() -> SavedChatThread {
@@ -436,6 +443,7 @@ struct ContentView: View {
         currentThreadID = thread.id
         currentSessionKey = thread.sessionKey
         messages = thread.messages
+        UserDefaults.standard.set(thread.id.uuidString, forKey: Self.currentThreadIDKey)
     }
 
     private func persistCurrentThread(messages: [ChatMessage]) {
@@ -483,16 +491,13 @@ struct ContentView: View {
     }
 
     private func loadThreads() {
-        guard let data = UserDefaults.standard.data(forKey: Self.threadsKey),
-              let parsed = try? JSONDecoder().decode([SavedChatThread].self, from: data) else {
+        if let data = UserDefaults.standard.data(forKey: Self.threadsKey),
+           let parsed = try? JSONDecoder().decode([SavedChatThread].self, from: data) {
+            threads = parsed
+        } else {
             threads = []
-            currentThreadID = nil
-            currentSessionKey = ""
-            missedInboxThreadID = nil
-            return
         }
 
-        threads = parsed
         if let raw = UserDefaults.standard.string(forKey: Self.missedInboxThreadIDKey),
            let id = UUID(uuidString: raw),
            threads.contains(where: { $0.id == id }) {
@@ -501,10 +506,9 @@ struct ContentView: View {
             missedInboxThreadID = nil
         }
 
-        // Cold launch default: start fresh; older chats remain recoverable in picker.
-        currentThreadID = nil
-        currentSessionKey = ""
-        messages = []
+        // On launch, always open "missed messages" as current chat.
+        let missedThread = getOrCreateMissedInboxThread()
+        selectThread(missedThread)
     }
 
     private func saveThreads() {
@@ -560,6 +564,13 @@ struct ContentView: View {
                 }
             }
         }
+        .contextMenu {
+            if !m.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button("Copy") {
+                    UIPasteboard.general.string = m.text
+                }
+            }
+        }
     }
 
     private var typingBubble: some View {
@@ -575,6 +586,14 @@ struct ContentView: View {
     private func formatResponseTime(_ ms: Int) -> String {
         if ms < 1000 { return "\(ms) ms" }
         return String(format: "%.1f s", Double(ms) / 1000.0)
+    }
+
+    private func pasteToInput() {
+        guard let copied = UIPasteboard.general.string else { return }
+        let cleaned = copied.trimmingCharacters(in: .newlines)
+        guard !cleaned.isEmpty else { return }
+        input = cleaned
+        inputFocused = true
     }
 
     private func pollEvents() async {
