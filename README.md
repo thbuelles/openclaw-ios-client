@@ -89,7 +89,13 @@ Then send messages.
 
 ## Push notifications (APNs)
 
-The app now auto-requests notification permission on first launch and registers a device token with the bridge at:
+The app now:
+
+- auto-requests notification permission on first launch
+- calls `registerForRemoteNotifications()`
+- posts APNs device token to bridge via `POST /register_push`
+
+Bridge token registration endpoint:
 
 - `POST /register_push`
 
@@ -119,3 +125,4 @@ curl -sS -X POST "http://127.0.0.1:8787/push" \
 - Keep bridge private (tailnet only)
 - Do not expose bridge to public internet without auth
 - For APNs to work, the iOS target must have **Push Notifications** capability enabled in Xcode and the app must be signed with a provisioning profile that includes push entitlement.
+- Without a paid Apple Developer subscription, you can still build/test local notifications and all bridge endpoints, but real remote APNs delivery to device is typically unavailable.

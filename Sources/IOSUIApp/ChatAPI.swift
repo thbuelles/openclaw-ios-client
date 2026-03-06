@@ -3,7 +3,7 @@ import UIKit
 
 @MainActor
 final class ChatAPI: ObservableObject {
-    private static let defaultBackend = "http://100.73.55.46:8787"
+    static let defaultBackend = "http://100.73.55.46:8787"
 
     @Published var backendURL: String {
         didSet { UserDefaults.standard.set(backendURL.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "backendURL") }
@@ -37,6 +37,39 @@ final class ChatAPI: ObservableObject {
             return parsed.events
         } catch {
             return []
+        }
+    }
+
+    static func registerPushToken(_ deviceToken: String) async {
+        let token = deviceToken.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !token.isEmpty else { return }
+
+        let saved = UserDefaults.standard.string(forKey: "backendURL")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = (saved?.isEmpty == false ? saved! : Self.defaultBackend)
+
+        guard let url = URL(string: base + "/register_push") else { return }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 10
+
+        let appVersion = (
+            Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        ) ?? "unknown"
+        let osVersion = UIDevice.current.systemVersion
+
+        let payload: [String: String] = [
+            "deviceToken": token,
+            "appVersion": appVersion,
+            "osVersion": osVersion,
+        ]
+
+        do {
+            req.httpBody = try JSONSerialization.data(withJSONObject: payload)
+            _ = try await URLSession.shared.data(for: req)
+        } catch {
+            // Best-effort registration only.
         }
     }
 
