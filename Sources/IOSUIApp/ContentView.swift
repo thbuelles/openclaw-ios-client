@@ -481,8 +481,14 @@ struct ContentView: View {
         threads = []
         missedInboxThreadID = nil
         UserDefaults.standard.removeObject(forKey: Self.missedInboxThreadIDKey)
+
+        // Immediately recreate/select inbox so UI always has an active chat.
+        let missedThread = getOrCreateMissedInboxThread()
+        selectThread(missedThread)
+
         saveThreads()
-        createNewThreadAndSelect()
+        showThreadPicker = false
+        showDeleteAllConfirm = false
     }
 
     private func loadThreads() {
