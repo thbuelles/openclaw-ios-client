@@ -118,11 +118,6 @@ struct ContentView: View {
                     .textFieldStyle(.roundedBorder)
                     .focused($inputFocused)
 
-                Button("Paste") {
-                    pasteToInput()
-                }
-                .disabled(isSending)
-
                 Button(isSending ? "..." : "Send") {
                     Task { await send() }
                 }
@@ -586,14 +581,6 @@ struct ContentView: View {
     private func formatResponseTime(_ ms: Int) -> String {
         if ms < 1000 { return "\(ms) ms" }
         return String(format: "%.1f s", Double(ms) / 1000.0)
-    }
-
-    private func pasteToInput() {
-        guard let copied = UIPasteboard.general.string else { return }
-        let cleaned = copied.trimmingCharacters(in: .newlines)
-        guard !cleaned.isEmpty else { return }
-        input = cleaned
-        inputFocused = true
     }
 
     private func pollEvents() async {
