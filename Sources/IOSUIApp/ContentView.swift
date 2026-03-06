@@ -23,10 +23,14 @@ struct ContentView: View {
     @FocusState private var inputFocused: Bool
 
     private static let threadsKey = "chatThreadsV1"
+    private static let missedInboxThreadIDKey = "missedInboxThreadID"
+
     private let pingTicker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     private let eventsTicker = Timer.publish(every: 8, on: .main, in: .common).autoconnect()
     @State private var lastEventID: String = UserDefaults.standard.string(forKey: "lastEventID") ?? ""
     @State private var seenEventIDs: Set<String> = []
+    @State private var didInitialEventsSync = false
+    @State private var missedInboxThreadID: UUID?
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -386,6 +390,48 @@ struct ContentView: View {
         messages = []
     }
 
+    private func getOrCreateMissedInboxThread() -> SavedChatThread {
+        if let existingID = missedInboxThreadID,
+           let existing = threads.first(where: { $0.id == existingID }) {
+            return existing
+        }
+
+        let id = UUID()
+        let thread = SavedChatThread(
+            id: id,
+            sessionKey: "ios-missed-\(id.uuidString.lowercased())",
+            messages: [],
+            createdAt: Date(),
+            updatedAt: Date(),
+            customTitle: "missed messages"
+        )
+
+        threads.append(thread)
+        missedInboxThreadID = id
+        UserDefaults.standard.set(id.uuidString, forKey: Self.missedInboxThreadIDKey)
+        saveThreads()
+        return thread
+    }
+
+    private func appendMissedEventsToInbox(_ events: [ServerEvent]) {
+        let newBodies = events
+            .map { $0.message.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard !newBodies.isEmpty else { return }
+
+        var thread = getOrCreateMissedInboxThread()
+        for body in newBodies {
+            thread.messages.append(.init(role: "assistant", text: body))
+        }
+        thread.updatedAt = Date()
+
+        if let idx = threads.firstIndex(where: { $0.id == thread.id }) {
+            threads[idx] = thread
+        }
+        saveThreads()
+    }
+
     private func selectThread(_ thread: SavedChatThread) {
         currentThreadID = thread.id
         currentSessionKey = thread.sessionKey
@@ -405,7 +451,8 @@ struct ContentView: View {
                 sessionKey: currentSessionKey.isEmpty ? "ios-ui-\(currentThreadID.uuidString.lowercased())" : currentSessionKey,
                 messages: messages,
                 createdAt: Date(),
-                updatedAt: Date()
+                updatedAt: Date(),
+                customTitle: nil
             )
             threads.append(thread)
         }
@@ -414,6 +461,12 @@ struct ContentView: View {
 
     private func deleteThread(_ thread: SavedChatThread) {
         threads.removeAll { $0.id == thread.id }
+
+        if missedInboxThreadID == thread.id {
+            missedInboxThreadID = nil
+            UserDefaults.standard.removeObject(forKey: Self.missedInboxThreadIDKey)
+        }
+
         saveThreads()
 
         if currentThreadID == thread.id {
@@ -423,6 +476,8 @@ struct ContentView: View {
 
     private func deleteAllThreads() {
         threads = []
+        missedInboxThreadID = nil
+        UserDefaults.standard.removeObject(forKey: Self.missedInboxThreadIDKey)
         saveThreads()
         createNewThreadAndSelect()
     }
@@ -433,10 +488,18 @@ struct ContentView: View {
             threads = []
             currentThreadID = nil
             currentSessionKey = ""
+            missedInboxThreadID = nil
             return
         }
 
         threads = parsed
+        if let raw = UserDefaults.standard.string(forKey: Self.missedInboxThreadIDKey),
+           let id = UUID(uuidString: raw),
+           threads.contains(where: { $0.id == id }) {
+            missedInboxThreadID = id
+        } else {
+            missedInboxThreadID = nil
+        }
 
         // Cold launch default: start fresh; older chats remain recoverable in picker.
         currentThreadID = nil
@@ -516,36 +579,38 @@ struct ContentView: View {
 
     private func pollEvents() async {
         let events = await api.fetchEvents(since: lastEventID.isEmpty ? nil : lastEventID)
-        guard !events.isEmpty else { return }
+        let firstSync = !didInitialEventsSync
 
-        var newestID = lastEventID
+        if !events.isEmpty {
+            var newestID = lastEventID
+            var unseenEvents: [ServerEvent] = []
 
-        for event in events {
-            newestID = event.id
+            for event in events {
+                newestID = event.id
 
-            if seenEventIDs.contains(event.id) {
-                continue
+                if seenEventIDs.contains(event.id) {
+                    continue
+                }
+                seenEventIDs.insert(event.id)
+                unseenEvents.append(event)
+
+                if seenEventIDs.count > 500 {
+                    seenEventIDs = Set(seenEventIDs.suffix(250))
+                }
             }
-            seenEventIDs.insert(event.id)
 
-            if seenEventIDs.count > 500 {
-                seenEventIDs = Set(seenEventIDs.suffix(250))
+            if firstSync {
+                appendMissedEventsToInbox(unseenEvents)
             }
 
-            if let session = event.session, !session.isEmpty, session == currentSessionKey {
-                continue
+            if newestID != lastEventID {
+                lastEventID = newestID
+                UserDefaults.standard.set(newestID, forKey: "lastEventID")
             }
-
-            let title = event.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "bici" : event.title
-            let body = event.message.trimmingCharacters(in: .whitespacesAndNewlines)
-            if body.isEmpty { continue }
-
-            LocalNotificationManager.shared.notify(title: title, body: body)
         }
 
-        if newestID != lastEventID {
-            lastEventID = newestID
-            UserDefaults.standard.set(newestID, forKey: "lastEventID")
+        if firstSync {
+            didInitialEventsSync = true
         }
     }
 
@@ -554,6 +619,11 @@ struct ContentView: View {
         let imageToSend = pendingImage
         guard !text.isEmpty || imageToSend != nil else { return }
         guard !currentSessionKey.isEmpty else { return }
+
+        if let missedID = missedInboxThreadID, missedID == currentThreadID {
+            missedInboxThreadID = nil
+            UserDefaults.standard.removeObject(forKey: Self.missedInboxThreadIDKey)
+        }
 
         input = ""
         pendingImage = nil
@@ -580,8 +650,13 @@ private struct SavedChatThread: Identifiable, Codable {
     var messages: [ChatMessage]
     let createdAt: Date
     var updatedAt: Date
+    var customTitle: String?
 
     var previewTitle: String {
+        if let customTitle, !customTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return customTitle
+        }
+
         let firstPrompt = messages.first(where: { $0.role == "user" })?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? "new chat"
         if firstPrompt.isEmpty { return "new chat" }
 
