@@ -519,7 +519,7 @@ struct ContentView: View {
     private var threadsSortedByRecency: [SavedChatThread] {
         threads
             .filter { thread in
-                thread.customTitle != "missed messages" && thread.messages.contains(where: { $0.role == "user" })
+                thread.customTitle != "missed messages" && !thread.messages.isEmpty
             }
             .sorted { $0.updatedAt > $1.updatedAt }
     }
