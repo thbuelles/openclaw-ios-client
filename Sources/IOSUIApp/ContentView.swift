@@ -23,6 +23,7 @@ struct ContentView: View {
     @State private var amazonItems: [SavedListItem] = []
     @State private var todoItems: [SavedListItem] = []
     @State private var miscItems: [SavedListItem] = []
+    @State private var quickCommandConfirmation: String?
 
     @FocusState private var inputFocused: Bool
 
@@ -120,6 +121,18 @@ struct ContentView: View {
                     Spacer()
                 }
                 .padding(.horizontal)
+            }
+
+            if let quickCommandConfirmation {
+                Text(quickCommandConfirmation)
+                    .font(.caption)
+                    .foregroundColor(.green)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.green.opacity(0.12))
+                    .clipShape(Capsule())
+                    .padding(.horizontal)
+                    .transition(.opacity)
             }
 
             HStack(spacing: 8) {
@@ -377,6 +390,7 @@ struct ContentView: View {
                                     .font(.caption)
                                     .foregroundColor(.gray)
                             }
+                            .padding(.leading, 14)
                             .padding(.vertical, 4)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -474,6 +488,7 @@ struct ContentView: View {
         Text(text)
             .font(.caption)
             .foregroundColor(.gray)
+            .padding(.leading, 14)
             .padding(.vertical, 6)
             .listRowBackground(Color(red: 0.18, green: 0.18, blue: 0.18))
     }
@@ -482,6 +497,7 @@ struct ContentView: View {
     private func drawerListItemRow(_ item: SavedListItem, onDelete: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
             Text(item.text)
+                .padding(.leading, 14)
                 .font(.body)
                 .foregroundColor(.white)
                 .lineLimit(2)
@@ -717,6 +733,17 @@ struct ContentView: View {
         }
     }
 
+    private func categoryTitle(for category: CommandCategory) -> String {
+        switch category {
+        case .amazon:
+            return "Amazon"
+        case .todo:
+            return "Todo"
+        case .misc:
+            return "Misc"
+        }
+    }
+
     private func removeQuickListItem(_ item: SavedListItem, category: CommandCategory) {
         switch category {
         case .amazon:
@@ -846,8 +873,14 @@ struct ContentView: View {
         if imageToSend == nil, let command = parseQuickListCommand(text) {
             addQuickListItem(text: command.itemText, category: command.category)
             expandedSections.insert(drawerSection(for: command.category))
+            quickCommandConfirmation = "Added to \(categoryTitle(for: command.category))"
             input = ""
             pendingImage = nil
+
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                quickCommandConfirmation = nil
+            }
             return
         }
 
