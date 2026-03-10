@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var showBackendInfo = false
     @State private var pingMs: Int?
     @State private var pingInFlight = false
+    @State private var drawerDragOffset: CGFloat = 0
 
     @FocusState private var inputFocused: Bool
 
@@ -144,7 +145,11 @@ struct ContentView: View {
             persistCurrentThread(messages: messages)
         }
         .onChange(of: showThreadPicker) { showing in
-            if showing { inputFocused = false }
+            if showing {
+                inputFocused = false
+            } else {
+                drawerDragOffset = 0
+            }
         }
         .onChange(of: showBackendInfo) { showing in
             if showing {
@@ -168,10 +173,36 @@ struct ContentView: View {
             if showThreadPicker {
                 Color.black.opacity(0.25)
                     .ignoresSafeArea()
-                    .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { showThreadPicker = false } }
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            drawerDragOffset = 0
+                            showThreadPicker = false
+                        }
+                    }
 
                 threadPickerDrawer
-                    .frame(width: UIScreen.main.bounds.width * 0.8)
+                    .frame(width: UIScreen.main.bounds.width * 0.7)
+                    .overlay(alignment: .trailing) {
+                        drawerCloseHandle
+                    }
+                    .offset(x: min(0, drawerDragOffset))
+                    .gesture(
+                        DragGesture(minimumDistance: 8)
+                            .onChanged { value in
+                                if value.translation.width < 0 {
+                                    drawerDragOffset = value.translation.width
+                                }
+                            }
+                            .onEnded { value in
+                                let shouldClose = value.translation.width < -70 || value.predictedEndTranslation.width < -110
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    if shouldClose {
+                                        showThreadPicker = false
+                                    }
+                                    drawerDragOffset = 0
+                                }
+                            }
+                    )
                     .transition(.move(edge: .leading))
                     .zIndex(1)
             }
@@ -235,7 +266,10 @@ struct ContentView: View {
                 Button {
                     inputFocused = false
                     showBackendInfo = false
-                    withAnimation(.easeInOut(duration: 0.2)) { showThreadPicker = true }
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        drawerDragOffset = 0
+                        showThreadPicker = true
+                    }
                 } label: {
                     VStack(spacing: 4) {
                         RoundedRectangle(cornerRadius: 1.5).frame(width: 16, height: 2.5)
@@ -268,8 +302,8 @@ struct ContentView: View {
                     showBackendInfo = false
                     createNewThreadAndSelect()
                 } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 20, weight: .bold))
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 19, weight: .semibold))
                         .foregroundStyle(Color.blue)
                         .frame(width: 38, height: 38)
                         .background(Color.black)
@@ -297,13 +331,31 @@ struct ContentView: View {
         .background(Color.black.opacity(0.96))
     }
 
+    private var drawerCloseHandle: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.black.opacity(0.9))
+                .frame(width: 24, height: 78)
+
+            Capsule()
+                .fill(Color.white.opacity(0.75))
+                .frame(width: 4, height: 34)
+        }
+        .offset(x: 12)
+        .contentShape(Rectangle())
+        .accessibilityLabel("Drag left to close chats")
+    }
+
     private var threadPickerDrawer: some View {
         List {
             ForEach(threadsSortedByRecency) { thread in
                 HStack(spacing: 10) {
                     Button {
                         selectThread(thread)
-                        withAnimation(.easeInOut(duration: 0.2)) { showThreadPicker = false }
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            drawerDragOffset = 0
+                            showThreadPicker = false
+                        }
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(thread.previewTitle)
