@@ -20,18 +20,30 @@ struct ContentView: View {
     @State private var pingMs: Int?
     @State private var pingInFlight = false
     @State private var expandedSections: Set<DrawerSection> = []
+    @State private var amazonItems: [SavedListItem] = []
+    @State private var todoItems: [SavedListItem] = []
+    @State private var miscItems: [SavedListItem] = []
 
     @FocusState private var inputFocused: Bool
 
     private static let threadsKey = "chatThreadsV1"
     private static let missedInboxThreadIDKey = "missedInboxThreadID"
     private static let currentThreadIDKey = "currentThreadID"
+    private static let amazonItemsKey = "amazonItemsV1"
+    private static let todoItemsKey = "todoItemsV1"
+    private static let miscItemsKey = "miscItemsV1"
 
     private enum DrawerSection: String, Hashable {
         case amazon
         case todo
         case misc
         case allChats
+    }
+
+    private enum CommandCategory {
+        case amazon
+        case todo
+        case misc
     }
 
     private let pingTicker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -142,6 +154,7 @@ struct ContentView: View {
         }
         .onAppear {
             loadThreads()
+            loadQuickLists()
             if currentThreadID == nil {
                 createNewThreadAndSelect()
             }
@@ -309,17 +322,41 @@ struct ContentView: View {
         List {
             drawerCategoryHeader(title: "Amazon", section: .amazon)
             if expandedSections.contains(.amazon) {
-                drawerPlaceholderRow("shopping list synthesis coming soon")
+                if amazonItems.isEmpty {
+                    drawerPlaceholderRow("no amazon items yet")
+                } else {
+                    ForEach(amazonItems) { item in
+                        drawerListItemRow(item) {
+                            removeQuickListItem(item, category: .amazon)
+                        }
+                    }
+                }
             }
 
             drawerCategoryHeader(title: "Todo", section: .todo)
             if expandedSections.contains(.todo) {
-                drawerPlaceholderRow("todo synthesis coming soon")
+                if todoItems.isEmpty {
+                    drawerPlaceholderRow("no todo items yet")
+                } else {
+                    ForEach(todoItems) { item in
+                        drawerListItemRow(item) {
+                            removeQuickListItem(item, category: .todo)
+                        }
+                    }
+                }
             }
 
             drawerCategoryHeader(title: "Misc", section: .misc)
             if expandedSections.contains(.misc) {
-                drawerPlaceholderRow("misc notes coming soon")
+                if miscItems.isEmpty {
+                    drawerPlaceholderRow("no misc items yet")
+                } else {
+                    ForEach(miscItems) { item in
+                        drawerListItemRow(item) {
+                            removeQuickListItem(item, category: .misc)
+                        }
+                    }
+                }
             }
 
             drawerCategoryHeader(title: "All Chats", section: .allChats)
@@ -358,7 +395,7 @@ struct ContentView: View {
                     .listRowBackground(Color(red: 0.18, green: 0.18, blue: 0.18))
                 }
 
-                if !threads.isEmpty {
+                if !threadsSortedByRecency.isEmpty {
                     Button {
                         showDeleteAllConfirm = true
                     } label: {
@@ -441,8 +478,34 @@ struct ContentView: View {
             .listRowBackground(Color(red: 0.18, green: 0.18, blue: 0.18))
     }
 
+    @ViewBuilder
+    private func drawerListItemRow(_ item: SavedListItem, onDelete: @escaping () -> Void) -> some View {
+        HStack(spacing: 8) {
+            Text(item.text)
+                .font(.body)
+                .foregroundColor(.white)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button(action: onDelete) {
+                Image(systemName: "trash")
+                    .foregroundColor(.red)
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Delete item")
+        }
+        .padding(.vertical, 4)
+        .listRowBackground(Color(red: 0.18, green: 0.18, blue: 0.18))
+    }
+
     private var threadsSortedByRecency: [SavedChatThread] {
-        threads.sorted { $0.updatedAt > $1.updatedAt }
+        threads
+            .filter { thread in
+                thread.customTitle != "missed messages" && thread.messages.contains(where: { $0.role == "user" })
+            }
+            .sorted { $0.updatedAt > $1.updatedAt }
     }
 
     private func createNewThreadAndSelect() {
@@ -579,6 +642,93 @@ struct ContentView: View {
         }
     }
 
+    private func loadQuickLists() {
+        amazonItems = loadList(forKey: Self.amazonItemsKey)
+        todoItems = loadList(forKey: Self.todoItemsKey)
+        miscItems = loadList(forKey: Self.miscItemsKey)
+    }
+
+    private func loadList(forKey key: String) -> [SavedListItem] {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let parsed = try? JSONDecoder().decode([SavedListItem].self, from: data) else {
+            return []
+        }
+        return parsed
+    }
+
+    private func saveQuickLists() {
+        saveList(amazonItems, key: Self.amazonItemsKey)
+        saveList(todoItems, key: Self.todoItemsKey)
+        saveList(miscItems, key: Self.miscItemsKey)
+    }
+
+    private func saveList(_ items: [SavedListItem], key: String) {
+        if let data = try? JSONEncoder().encode(items) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+    }
+
+    private func parseQuickListCommand(_ rawText: String) -> (category: CommandCategory, itemText: String)? {
+        let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+
+        let lower = text.lowercased()
+        let prefixes: [(String, CommandCategory)] = [
+            ("amazon", .amazon),
+            ("todo", .todo),
+            ("misc", .misc)
+        ]
+
+        for (prefix, category) in prefixes {
+            if lower == prefix {
+                return nil
+            }
+            if lower.hasPrefix(prefix + " ") || lower.hasPrefix(prefix + ":") {
+                let body = String(text.dropFirst(prefix.count))
+                    .trimmingCharacters(in: CharacterSet(charactersIn: " :\t\n"))
+                guard !body.isEmpty else { return nil }
+                return (category, body)
+            }
+        }
+        return nil
+    }
+
+    private func addQuickListItem(text: String, category: CommandCategory) {
+        let item = SavedListItem(id: UUID(), text: text, createdAt: Date())
+        switch category {
+        case .amazon:
+            amazonItems.insert(item, at: 0)
+        case .todo:
+            todoItems.insert(item, at: 0)
+        case .misc:
+            miscItems.insert(item, at: 0)
+        }
+        saveQuickLists()
+    }
+
+    private func drawerSection(for category: CommandCategory) -> DrawerSection {
+        switch category {
+        case .amazon:
+            return .amazon
+        case .todo:
+            return .todo
+        case .misc:
+            return .misc
+        }
+    }
+
+    private func removeQuickListItem(_ item: SavedListItem, category: CommandCategory) {
+        switch category {
+        case .amazon:
+            amazonItems.removeAll { $0.id == item.id }
+        case .todo:
+            todoItems.removeAll { $0.id == item.id }
+        case .misc:
+            miscItems.removeAll { $0.id == item.id }
+        }
+        saveQuickLists()
+    }
+
     private func bubble(_ m: ChatMessage) -> some View {
         HStack {
             if m.role == "assistant" {
@@ -693,6 +843,14 @@ struct ContentView: View {
         guard !text.isEmpty || imageToSend != nil else { return }
         guard !currentSessionKey.isEmpty else { return }
 
+        if imageToSend == nil, let command = parseQuickListCommand(text) {
+            addQuickListItem(text: command.itemText, category: command.category)
+            expandedSections.insert(drawerSection(for: command.category))
+            input = ""
+            pendingImage = nil
+            return
+        }
+
         if let missedID = missedInboxThreadID, missedID == currentThreadID {
             missedInboxThreadID = nil
             UserDefaults.standard.removeObject(forKey: Self.missedInboxThreadIDKey)
@@ -715,6 +873,12 @@ struct ContentView: View {
             messages.append(.init(role: "assistant", text: "Error: \(error.localizedDescription)", responseTimeMs: elapsedMs))
         }
     }
+}
+
+private struct SavedListItem: Identifiable, Codable {
+    let id: UUID
+    let text: String
+    let createdAt: Date
 }
 
 private struct SavedChatThread: Identifiable, Codable {
