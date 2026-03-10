@@ -19,13 +19,20 @@ struct ContentView: View {
     @State private var showBackendInfo = false
     @State private var pingMs: Int?
     @State private var pingInFlight = false
-    @State private var drawerDragOffset: CGFloat = 0
+    @State private var expandedSections: Set<DrawerSection> = []
 
     @FocusState private var inputFocused: Bool
 
     private static let threadsKey = "chatThreadsV1"
     private static let missedInboxThreadIDKey = "missedInboxThreadID"
     private static let currentThreadIDKey = "currentThreadID"
+
+    private enum DrawerSection: String, Hashable {
+        case amazon
+        case todo
+        case misc
+        case allChats
+    }
 
     private let pingTicker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     private let eventsTicker = Timer.publish(every: 8, on: .main, in: .common).autoconnect()
@@ -145,11 +152,7 @@ struct ContentView: View {
             persistCurrentThread(messages: messages)
         }
         .onChange(of: showThreadPicker) { showing in
-            if showing {
-                inputFocused = false
-            } else {
-                drawerDragOffset = 0
-            }
+            if showing { inputFocused = false }
         }
         .onChange(of: showBackendInfo) { showing in
             if showing {
@@ -173,36 +176,10 @@ struct ContentView: View {
             if showThreadPicker {
                 Color.black.opacity(0.25)
                     .ignoresSafeArea()
-                    .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            drawerDragOffset = 0
-                            showThreadPicker = false
-                        }
-                    }
+                    .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { showThreadPicker = false } }
 
                 threadPickerDrawer
                     .frame(width: UIScreen.main.bounds.width * 0.7)
-                    .overlay(alignment: .trailing) {
-                        drawerCloseHandle
-                    }
-                    .offset(x: min(0, drawerDragOffset))
-                    .gesture(
-                        DragGesture(minimumDistance: 8)
-                            .onChanged { value in
-                                if value.translation.width < 0 {
-                                    drawerDragOffset = value.translation.width
-                                }
-                            }
-                            .onEnded { value in
-                                let shouldClose = value.translation.width < -70 || value.predictedEndTranslation.width < -110
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    if shouldClose {
-                                        showThreadPicker = false
-                                    }
-                                    drawerDragOffset = 0
-                                }
-                            }
-                    )
                     .transition(.move(edge: .leading))
                     .zIndex(1)
             }
@@ -266,10 +243,7 @@ struct ContentView: View {
                 Button {
                     inputFocused = false
                     showBackendInfo = false
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        drawerDragOffset = 0
-                        showThreadPicker = true
-                    }
+                    withAnimation(.easeInOut(duration: 0.2)) { showThreadPicker = true }
                 } label: {
                     VStack(spacing: 4) {
                         RoundedRectangle(cornerRadius: 1.5).frame(width: 16, height: 2.5)
@@ -331,75 +305,75 @@ struct ContentView: View {
         .background(Color.black.opacity(0.96))
     }
 
-    private var drawerCloseHandle: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.black.opacity(0.9))
-                .frame(width: 24, height: 78)
-
-            Capsule()
-                .fill(Color.white.opacity(0.75))
-                .frame(width: 4, height: 34)
-        }
-        .offset(x: 12)
-        .contentShape(Rectangle())
-        .accessibilityLabel("Drag left to close chats")
-    }
-
     private var threadPickerDrawer: some View {
         List {
-            ForEach(threadsSortedByRecency) { thread in
-                HStack(spacing: 10) {
-                    Button {
-                        selectThread(thread)
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            drawerDragOffset = 0
-                            showThreadPicker = false
-                        }
-                    } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(thread.previewTitle)
-                                .font(.body)
-                                .foregroundColor(.white)
-                                .lineLimit(1)
-
-                            Text(thread.updatedAt.formatted(date: .abbreviated, time: .shortened))
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                        }
-                        .padding(.vertical, 4)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        threadPendingDelete = thread
-                    } label: {
-                        Image(systemName: "trash")
-                            .foregroundColor(.red)
-                            .frame(width: 28, height: 28)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Delete chat")
-                }
-                .listRowBackground(Color(red: 0.18, green: 0.18, blue: 0.18))
+            drawerCategoryHeader(title: "Amazon", section: .amazon)
+            if expandedSections.contains(.amazon) {
+                drawerPlaceholderRow("shopping list synthesis coming soon")
             }
 
-            if !threads.isEmpty {
-                Button {
-                    showDeleteAllConfirm = true
-                } label: {
-                    HStack {
-                        Spacer()
-                        Text("Delete All")
-                            .foregroundColor(.red)
-                            .fontWeight(.semibold)
-                        Spacer()
+            drawerCategoryHeader(title: "Todo", section: .todo)
+            if expandedSections.contains(.todo) {
+                drawerPlaceholderRow("todo synthesis coming soon")
+            }
+
+            drawerCategoryHeader(title: "Misc", section: .misc)
+            if expandedSections.contains(.misc) {
+                drawerPlaceholderRow("misc notes coming soon")
+            }
+
+            drawerCategoryHeader(title: "All Chats", section: .allChats)
+            if expandedSections.contains(.allChats) {
+                ForEach(threadsSortedByRecency) { thread in
+                    HStack(spacing: 10) {
+                        Button {
+                            selectThread(thread)
+                            withAnimation(.easeInOut(duration: 0.2)) { showThreadPicker = false }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(thread.previewTitle)
+                                    .font(.body)
+                                    .foregroundColor(.white)
+                                    .lineLimit(1)
+
+                                Text(thread.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                            }
+                            .padding(.vertical, 4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            threadPendingDelete = thread
+                        } label: {
+                            Image(systemName: "trash")
+                                .foregroundColor(.red)
+                                .frame(width: 28, height: 28)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Delete chat")
                     }
-                    .padding(.vertical, 8)
+                    .listRowBackground(Color(red: 0.18, green: 0.18, blue: 0.18))
                 }
-                .buttonStyle(.plain)
-                .listRowBackground(Color(red: 0.18, green: 0.18, blue: 0.18))
+
+                if !threads.isEmpty {
+                    Button {
+                        showDeleteAllConfirm = true
+                    } label: {
+                        HStack {
+                            Spacer()
+                            Text("Delete All")
+                                .foregroundColor(.red)
+                                .fontWeight(.semibold)
+                            Spacer()
+                        }
+                        .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.plain)
+                    .listRowBackground(Color(red: 0.18, green: 0.18, blue: 0.18))
+                }
             }
         }
         .listStyle(.plain)
@@ -430,6 +404,41 @@ struct ContentView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
+    }
+
+    @ViewBuilder
+    private func drawerCategoryHeader(title: String, section: DrawerSection) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                if expandedSections.contains(section) {
+                    expandedSections.remove(section)
+                } else {
+                    expandedSections.insert(section)
+                }
+            }
+        } label: {
+            HStack {
+                Text(title)
+                    .foregroundColor(.white)
+                    .font(.headline)
+                Spacer()
+                Image(systemName: expandedSections.contains(section) ? "chevron.down" : "chevron.right")
+                    .foregroundColor(.gray)
+                    .font(.caption)
+            }
+            .padding(.vertical, 8)
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(Color(red: 0.18, green: 0.18, blue: 0.18))
+    }
+
+    @ViewBuilder
+    private func drawerPlaceholderRow(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundColor(.gray)
+            .padding(.vertical, 6)
+            .listRowBackground(Color(red: 0.18, green: 0.18, blue: 0.18))
     }
 
     private var threadsSortedByRecency: [SavedChatThread] {
