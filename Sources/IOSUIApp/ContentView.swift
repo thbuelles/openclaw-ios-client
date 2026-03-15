@@ -24,6 +24,7 @@ struct ContentView: View {
     @State private var todoItems: [SavedListItem] = []
     @State private var miscItems: [SavedListItem] = []
     @State private var quickCommandConfirmation: String?
+    @State private var drawerSearchText: String = ""
 
     @FocusState private var inputFocused: Bool
 
@@ -333,12 +334,26 @@ struct ContentView: View {
 
     private var threadPickerDrawer: some View {
         List {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.gray)
+                TextField("Search", text: $drawerSearchText)
+                    .textInputAutocapitalization(.never)
+                    .disableAutocorrection(true)
+                    .foregroundColor(.white)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(Color.black.opacity(0.35))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .listRowBackground(Color(red: 0.18, green: 0.18, blue: 0.18))
+
             drawerCategoryHeader(title: "Amazon", section: .amazon)
             if expandedSections.contains(.amazon) {
-                if amazonItems.isEmpty {
-                    drawerPlaceholderRow("no amazon items yet")
+                if filteredAmazonItems.isEmpty {
+                    drawerPlaceholderRow(drawerSearchText.isEmpty ? "no amazon items yet" : "no matches")
                 } else {
-                    ForEach(amazonItems) { item in
+                    ForEach(filteredAmazonItems) { item in
                         drawerListItemRow(item) {
                             removeQuickListItem(item, category: .amazon)
                         }
@@ -348,10 +363,10 @@ struct ContentView: View {
 
             drawerCategoryHeader(title: "Todo", section: .todo)
             if expandedSections.contains(.todo) {
-                if todoItems.isEmpty {
-                    drawerPlaceholderRow("no todo items yet")
+                if filteredTodoItems.isEmpty {
+                    drawerPlaceholderRow(drawerSearchText.isEmpty ? "no todo items yet" : "no matches")
                 } else {
-                    ForEach(todoItems) { item in
+                    ForEach(filteredTodoItems) { item in
                         drawerListItemRow(item) {
                             removeQuickListItem(item, category: .todo)
                         }
@@ -361,10 +376,10 @@ struct ContentView: View {
 
             drawerCategoryHeader(title: "Misc", section: .misc)
             if expandedSections.contains(.misc) {
-                if miscItems.isEmpty {
-                    drawerPlaceholderRow("no misc items yet")
+                if filteredMiscItems.isEmpty {
+                    drawerPlaceholderRow(drawerSearchText.isEmpty ? "no misc items yet" : "no matches")
                 } else {
-                    ForEach(miscItems) { item in
+                    ForEach(filteredMiscItems) { item in
                         drawerListItemRow(item) {
                             removeQuickListItem(item, category: .misc)
                         }
@@ -374,7 +389,7 @@ struct ContentView: View {
 
             drawerCategoryHeader(title: "All Chats", section: .allChats)
             if expandedSections.contains(.allChats) {
-                ForEach(threadsSortedByRecency) { thread in
+                ForEach(filteredThreadsSortedByRecency) { thread in
                     HStack(spacing: 10) {
                         Button {
                             selectThread(thread)
@@ -409,7 +424,7 @@ struct ContentView: View {
                     .listRowBackground(Color(red: 0.18, green: 0.18, blue: 0.18))
                 }
 
-                if !threadsSortedByRecency.isEmpty {
+                if !filteredThreadsSortedByRecency.isEmpty {
                     Button {
                         showDeleteAllConfirm = true
                     } label: {
@@ -522,6 +537,36 @@ struct ContentView: View {
                 thread.customTitle != "missed messages" && !thread.messages.isEmpty
             }
             .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    private var filteredAmazonItems: [SavedListItem] {
+        filterItems(amazonItems)
+    }
+
+    private var filteredTodoItems: [SavedListItem] {
+        filterItems(todoItems)
+    }
+
+    private var filteredMiscItems: [SavedListItem] {
+        filterItems(miscItems)
+    }
+
+    private var filteredThreadsSortedByRecency: [SavedChatThread] {
+        guard !drawerSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return threadsSortedByRecency
+        }
+
+        let q = drawerSearchText.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        return threadsSortedByRecency.filter { thread in
+            if thread.previewTitle.lowercased().contains(q) { return true }
+            return thread.messages.contains { $0.text.lowercased().contains(q) }
+        }
+    }
+
+    private func filterItems(_ items: [SavedListItem]) -> [SavedListItem] {
+        let q = drawerSearchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return items }
+        return items.filter { $0.text.lowercased().contains(q) }
     }
 
     private func createNewThreadAndSelect() {
